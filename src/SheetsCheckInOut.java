@@ -9,62 +9,81 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class SheetsCheckInOut {
+
     private static final String SPREADSHEET_ID = "1y1ylV-xV7MDMCY3kSSi0Qf-7-1X9uH0QQVnH9_BWyI4";
-    private static final String RANGE = "2025!A:F"; // シート名と範囲
-    private static final String NAME = "田中 太郎";
-    private static final String SCHOOL = "東京第一高校";
-    private static final String GRADE = "3年";
+    private static final String ROSTER_SHEET = "0000";  // 名簿シート
+    private static final String RECORD_SHEET = "2025";  // 受付記録シート
+    private static final String ID = "A001"; // ★ここを入力 IDベースで処理
 
     public static void main(String[] args) throws IOException, GeneralSecurityException {
         Sheets service = SheetsQuickstart.getSheetsService();
 
         // 日付・時刻の取得
         String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
-        String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
+        String nowTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
 
-        // データを取得
-        ValueRange response = service.spreadsheets().values()
-                .get(SPREADSHEET_ID, RANGE)
+        // 名簿（0000シート）から対象IDの情報を取得
+        ValueRange rosterResponse = service.spreadsheets().values()
+                .get(SPREADSHEET_ID, ROSTER_SHEET + "!A:F")
                 .execute();
-        List<List<Object>> values = response.getValues();
+        List<List<Object>> roster = rosterResponse.getValues();
+
+        String name = null;
+        String school = null;
+        String grade = null;
+
+        for (List<Object> row : roster) {
+            if (row.size() > 0 && ID.equals(row.get(0).toString())) {
+                name = row.size() > 1 ? row.get(1).toString() : "";
+                school = row.size() > 2 ? row.get(2).toString() : "";
+                grade = row.size() > 3 ? row.get(3).toString() : "";
+                break;
+            }
+        }
+
+        if (name == null) {
+            System.out.println("エラー：指定されたIDのデータが名簿に存在しません。");
+            return;
+        }
+
+        // 記録シート（2025）から入室済みかを確認
+        ValueRange recordResponse = service.spreadsheets().values()
+                .get(SPREADSHEET_ID, RECORD_SHEET + "!A:G")
+                .execute();
+        List<List<Object>> records = recordResponse.getValues();
 
         int targetRow = -1;
 
-        // 既存データの中から一致する入室済みデータを探す
-        if (values != null) {
-            for (int i = 1; i < values.size(); i++) { // A2行目からチェック
-                List<Object> row = values.get(i);
-                if (row.size() >= 5 &&
-                        NAME.equals(row.get(0)) &&
-                        SCHOOL.equals(row.get(1)) &&
-                        GRADE.equals(row.get(2)) &&
-                        today.equals(row.get(3)) &&
-                        !row.get(4).toString().isEmpty() &&
-                        (row.size() < 6 || row.get(5).toString().isEmpty())) {
-                    targetRow = i + 1; // 1-based row number
-                    break;
-                }
+        for (int i = 1; i < records.size(); i++) {
+            List<Object> row = records.get(i);
+            if (row.size() >= 6 &&
+                ID.equals(row.get(0).toString()) &&
+                today.equals(row.get(1).toString()) &&
+                !row.get(5).toString().isEmpty() &&
+                (row.size() < 7 || row.get(6).toString().isEmpty())) {
+                targetRow = i + 1; // 1-based
+                break;
             }
         }
 
         if (targetRow != -1) {
-            // 退室処理
-            String cell = "F" + targetRow;
-            List<List<Object>> writeData = List.of(List.of(time));
+            // 退室時間の記録
+            String cell = "G" + targetRow;
+            List<List<Object>> writeData = List.of(List.of(nowTime));
             ValueRange body = new ValueRange().setValues(writeData);
             service.spreadsheets().values()
-                    .update(SPREADSHEET_ID, "2025!" + cell, body)
+                    .update(SPREADSHEET_ID, RECORD_SHEET + "!" + cell, body)
                     .setValueInputOption("USER_ENTERED")
                     .execute();
             System.out.println("退室時間を記録しました！");
         } else {
-            // 入室処理
+            // 新規入室の記録
             List<List<Object>> newRow = List.of(
-                    List.of(NAME, SCHOOL, GRADE, today, time, "")
+                    List.of(ID, today, name, grade, school, nowTime, "")
             );
             ValueRange appendBody = new ValueRange().setValues(newRow);
             service.spreadsheets().values()
-                    .append(SPREADSHEET_ID, RANGE, appendBody)
+                    .append(SPREADSHEET_ID, RECORD_SHEET + "!A:G", appendBody)
                     .setValueInputOption("USER_ENTERED")
                     .execute();
             System.out.println("入室時間を記録しました！");
