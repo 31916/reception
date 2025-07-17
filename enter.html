@@ -5,90 +5,131 @@
   <title>受付システム</title>
 </head>
 <body>
-  <h2>受付ページ</h2>
+  <h2>受付フォーム</h2>
 
-  <div id="register-section" style="display:none;">
-    <p>はじめての利用ですね！以下を入力してください。</p>
-    <label>名前: <input type="text" id="name" /></label><br>
-    <label>高校: <input type="text" id="school" /></label><br>
-    <label>学年: 
-      <select id="grade">
-        <option value="">選択してください</option>
-        <option value="1年">1年</option>
-        <option value="2年">2年</option>
-        <option value="3年">3年</option>
-      </select>
-    </label><br>
-    <label>誕生日（任意）: <input type="date" id="birthday" /></label><br><br>
-    <button onclick="register()">登録</button>
+  <div id="registerForm" style="display:none;">
+    <p>初めてのアクセスのようです。以下を記入して登録してください。</p>
+    <label>名前：<input type="text" id="name"></label><br>
+    <label>学校：<input type="text" id="school"></label><br>
+    <label>学年（例：1年）：<input type="text" id="grade"></label><br>
+    <label>誕生日（任意・yyyy/mm/dd）：<input type="text" id="birthday"></label><br>
+    <button onclick="register()">登録して入室</button>
   </div>
 
-  <div id="status-section" style="display:none;">
-    <p id="status-message">処理中です…</p>
+  <div id="recordStatus" style="display:none;">
+    <p id="statusMessage"></p>
   </div>
 
-  <script>
-    const scriptUrl = "https://script.google.com/macros/s/AKfycbyWlEU5O3MUtuKAssPDQeeCMf50r7QP3EWBUTQ--wqQGrzo_fhayHnOdf4U6mk7OkP92A/exec";
-    const userId = localStorage.getItem("userId");
+  <!-- Firebase SDKの読み込み -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, collection, addDoc, setDoc, doc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    if (!userId) {
-      // 初回アクセス：登録フォームを表示
-      document.getElementById("register-section").style.display = "block";
-    } else {
-      // 登録済み → 入退室記録
-      document.getElementById("status-section").style.display = "block";
-      document.getElementById("status-message").textContent = "入退室を記録しています…";
+    const firebaseConfig = {
+      apiKey: "AIzaSyCfQrEiU52EQhkOElyc5AWf4fzNS_yVF4E",
+      authDomain: "reception-71217.firebaseapp.com",
+      projectId: "reception-71217",
+      storageBucket: "reception-71217.firebasestorage.app",
+      messagingSenderId: "22979806940",
+      appId: "1:22979806940:web:90626983bc1b9d72a99619"
+    };
 
-      fetch(`${scriptUrl}?mode=record&id=${userId}`)
-        .then(res => res.text())
-        .then(msg => {
-          document.getElementById("status-message").textContent = msg;
-        })
-        .catch(err => {
-          document.getElementById("status-message").textContent = "エラーが発生しました：" + err;
-        });
-    }
-    // 登録処理をPOSTリクエストで送るよう変更
-    function register() {
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    window.onload = async function () {
+      const id = localStorage.getItem("student_id");
+      if (!id) {
+        document.getElementById("registerForm").style.display = "block";
+      } else {
+        await recordEntry(id);
+      }
+    };
+
+    async function register() {
       const name = document.getElementById("name").value.trim();
       const school = document.getElementById("school").value.trim();
-      const grade = document.getElementById("grade").value;
-      const birthday = document.getElementById("birthday").value;
+      const grade = document.getElementById("grade").value.trim();
+      let birthday = document.getElementById("birthday").value.trim();
 
       if (!name || !school || !grade) {
-        alert("名前・高校・学年は必須です。");
+        alert("名前、学校、学年は必須です。");
         return;
       }
 
-      const newId = Date.now().toString() + Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+      const today = new Date();
+      const year = today.getFullYear();
+      if (!birthday) {
+        const estimatedBirthYear = grade === "1年" ? year - 15 : grade === "2年" ? year - 16 : year - 17;
+        birthday = `${estimatedBirthYear}`;
+      }
 
-      const formData = new FormData();
-      formData.append("mode", "register");
-      formData.append("id", newId);
-      formData.append("name", name);
-      formData.append("school", school);
-      formData.append("grade", grade);
-      formData.append("birthday", birthday);
+      const id = `id-${Date.now()}`;
+      const userData = { id, name, school, birthday, remarks: "" };
 
-      fetch(scriptUrl, {
-        method: "POST",
-        body: formData,
-      })
-        .then(res => res.text())
-        .then(msg => {
-          if (msg.includes("登録が完了")) {
-            localStorage.setItem("userId", newId);
-            alert("登録が完了しました！ページを再読み込みして入退室を行ってください。");
-            location.reload();
-          } else {
-            alert("サーバーからの応答：" + msg);
-          }
-        })
-        .catch(err => {
-          alert("登録に失敗しました：" + err);
-        });
+      try {
+        await setDoc(doc(db, "roster", id), userData);
+        localStorage.setItem("student_id", id);
+        await recordEntry(id);
+      } catch (error) {
+        alert("登録に失敗しました: " + error);
+      }
     }
 
+    async function recordEntry(id) {
+      try {
+        const docRef = doc(db, "roster", id);
+        const userSnap = await getDoc(docRef);
+        if (!userSnap.exists()) {
+          alert("登録データが見つかりません。");
+          localStorage.removeItem("student_id");
+          location.reload();
+          return;
+        }
+
+        const user = userSnap.data();
+        const today = new Date();
+        const yyyyMMdd = today.toISOString().slice(0, 10);
+        const now = today.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+
+        const year = today.getFullYear();
+        const recordRef = collection(db, `record-${year}`);
+
+        const snapshotId = `${id}_${yyyyMMdd}`;
+        const recordDoc = doc(recordRef, snapshotId);
+        const existing = await getDoc(recordDoc);
+
+        if (existing.exists() && !existing.data().exitTime) {
+          // 退室処理
+          await setDoc(recordDoc, { exitTime: now }, { merge: true });
+          showStatus("退室時間を記録しました。お疲れ様でした！");
+        } else {
+          // 入室処理
+          const birthYear = parseInt(user.birthday.slice(0, 4));
+          const age = year - birthYear;
+          const calcGrade = age === 15 ? "1年" : age === 16 ? "2年" : age === 17 ? "3年" : "不明";
+
+          await setDoc(recordDoc, {
+            id: user.id,
+            name: user.name,
+            date: yyyyMMdd,
+            grade: calcGrade,
+            school: user.school,
+            entryTime: now,
+            exitTime: ""
+          });
+          showStatus("入室時間を記録しました。ようこそ！");
+        }
+      } catch (error) {
+        showStatus("記録処理でエラーが発生しました: " + error);
+      }
+    }
+
+    function showStatus(msg) {
+      document.getElementById("registerForm").style.display = "none";
+      document.getElementById("recordStatus").style.display = "block";
+      document.getElementById("statusMessage").textContent = msg;
+    }
   </script>
 </body>
 </html>
