@@ -13,7 +13,7 @@ public class SheetsCheckInOut {
     private static final String SPREADSHEET_ID = "1y1ylV-xV7MDMCY3kSSi0Qf-7-1X9uH0QQVnH9_BWyI4";
     private static final String ROSTER_SHEET = "0000";  // 名簿シート
     private static final String RECORD_SHEET = "2025";  // 受付記録シート
-    private static final String ID = "A001"; // ★ここを入力 IDベースで処理
+    private static final String ID = "A002"; // ★ここを入力 IDベースで処理
 
     public static void main(String[] args) throws IOException, GeneralSecurityException {
         Sheets service = SheetsQuickstart.getSheetsService();
